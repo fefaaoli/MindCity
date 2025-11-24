@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MindCity - Produtividade Gamificada</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                fontFamily: {
+                    sans: ['Nunito', 'sans-serif'],
+                },
+                extend: {
+                    colors: {
+                        brand: {
+                            blue: '#AEC6CF',
+                            pink: '#F4C2C2',
+                            sage: '#A8C3A4',
+                            dark: '#2D3748',
+                            light: '#F7FAFC'
+                        }
+                    },
+                    boxShadow: {
+                        'soft': '0 10px 40px -10px rgba(0,0,0,0.08)',
+                        'floating': '0 20px 60px -15px rgba(168, 195, 164, 0.4)'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #F8FAFC;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 25vh; /* Altura reduzida para dar mais espaço à UI */
+            background: linear-gradient(180deg, #E6F0FF 0%, #F8FAFC 100%);
+            position: relative;
+            cursor: grab;
+            z-index: 1;
+        }
+
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+
+        #ui-container {
+            height: 75vh; /* Altura aumentada para expandir áreas de scroll */
+            background: white;
+            border-top-left-radius: 2rem;
+            border-top-right-radius: 2rem;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.05);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transform: translateY(-20px);
+        }
+
+        .task-checkbox:checked + div {
+            text-decoration: line-through;
+            color: #A0AEC0;
+        }
+
+        .task-checkbox:checked + div + div {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Custom Scrollbar */
+        .scroll-area::-webkit-scrollbar {
+            width: 4px;
+        }
+        .scroll-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .scroll-area::-webkit-scrollbar-thumb {
+            background-color: #E2E8F0;
+            border-radius: 20px;
+        }
+
+        .floating-fab {
+            animation: float 6s ease-in-out infinite;
+            z-index: 50;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .confetti {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #f00;
+            animation: fall linear forwards;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        @keyframes fall {
+            to { transform: translateY(100px) rotate(720deg); opacity: 0; }
+        }
+
+        /* Tab Transitions */
+        .tab-content {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            height: 100%;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .nav-item.active {
+            color: #2D3748;
+            font-weight: 800;
+        }
+        
+        .nav-item.active .nav-indicator {
+            width: 20px;
+        }
+
+        /* Filter animation */
+        .task-item {
+            transition: all 0.3s ease;
+        }
+        .task-item.hidden-task {
+            display: none;
+        }
+
+        /* Chat bubbles */
+        .chat-bubble-ai {
+            background-color: #F7FAFC;
+            border-radius: 12px 12px 12px 0px;
+            padding: 12px;
+            margin-bottom: 8px;
+            color: #2D3748;
+            font-size: 0.9rem;
+            border: 1px solid #EDF2F7;
+        }
+        .chat-bubble-user {
+            background-color: #AEC6CF;
+            border-radius: 12px 12px 0px 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            color: white;
+            align-self: flex-end;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top 25%: 3D World -->
+    <div id="canvas-container">
+        <!-- Overlay for filter reset -->
+        <button id="reset-filter-btn" class="hidden absolute top-4 right-4 bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-gray-600 shadow-sm border border-white hover:bg-white transition-all z-20">
+            <i class="ph-bold ph-x mr-1"></i> Limpar Filtro
+        </button>
+    </div>
+
+    <!-- Bottom 75%: UI -->
+    <div id="ui-container">
+        <!-- Handle -->
+        <div class="w-full flex justify-center pt-3 pb-1 shrink-0">
+            <div class="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+        </div>
+
+        <!-- MAIN CONTENT AREA (Scrollable) -->
+        <div class="flex-1 overflow-hidden relative">
+            
+            <!-- TAB 1: HOME (Original) -->
+            <div id="tab-home" class="tab-content active px-8 pb-20">
+                <!-- Header -->
+                <div class="pt-2 pb-4 shrink-0">
+                    <div class="flex justify-between items-end">
+                        <div>
+                            <p class="text-brand-dark opacity-50 text-sm font-bold uppercase tracking-wider">Segunda, 24 Nov</p>
+                            <h1 class="text-3xl font-extrabold text-brand-dark mt-1">Meu Foco</h1>
+                        </div>
+                        <div class="flex -space-x-2">
+                            <div class="w-8 h-8 rounded-full bg-brand-pink border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm">J</div>
+                            <div class="w-8 h-8 rounded-full bg-brand-sage border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm">M</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stats -->
+                    <div class="mt-6 flex space-x-4">
+                        <div class="flex-1 bg-brand-light p-3 rounded-2xl flex items-center space-x-3 border border-gray-100">
+                            <div class="w-10 h-10 rounded-xl bg-brand-pink/20 text-brand-pink flex items-center justify-center">
+                                <i class="ph-fill ph-brain text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 font-semibold">Nível Mente</p>
+                                <p class="text-lg font-bold text-gray-800">12</p>
+                            </div>
+                        </div>
+                        <div class="flex-1 bg-brand-light p-3 rounded-2xl flex items-center space-x-3 border border-gray-100">
+                            <div class="w-10 h-10 rounded-xl bg-brand-blue/20 text-brand-blue flex items-center justify-center">
+                                <i class="ph-fill ph-barbell text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 font-semibold">Nível Corpo</p>
+                                <p class="text-lg font-bold text-gray-800">8</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Task List -->
+                <div class="overflow-y-auto scroll-area space-y-4 pb-24" id="task-list">
+                    
+                    <div id="filter-message" class="hidden text-center py-2 text-brand-blue font-bold text-sm bg-blue-50 rounded-lg border border-blue-100 mb-2">
+                        Exibindo Tarefas de Academia
+                    </div>
+
+                    <!-- Category: Morning -->
+                    <div class="task-category group-morning">
+                        <div class="text-gray-400 text-xs font-bold uppercase tracking-wider mt-2 mb-3">Rotina Matinal</div>
+                        
+                        <!-- Task: Meditation (Mind) -->
+                        <label class="task-item group relative flex items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer mb-4" data-building="mind">
+                            <input type="checkbox" class="task-checkbox hidden">
+                            <div class="w-6 h-6 rounded-full border-2 border-brand-sage flex items-center justify-center transition-colors group-hover:border-green-400 peer-checked:bg-brand-sage peer-checked:border-brand-sage">
+                                <i class="ph-bold ph-check text-white text-xs opacity-0 transition-opacity peer-checked:opacity-100 group-active:scale-90"></i>
+                            </div>
+                            <div class="ml-4 flex-1 text-gray-700 font-semibold transition-all select-none">Meditação Matinal</div>
+                            <div class="bg-brand-sage/20 text-brand-sage text-[10px] font-bold px-2 py-1 rounded-lg">+10 XP</div>
+                        </label>
+
+                        <!-- Task: Gym (Body/Gym) -->
+                        <label class="task-item group relative flex items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer mb-4" data-building="gym">
+                            <input type="checkbox" class="task-checkbox hidden">
+                            <div class="w-6 h-6 rounded-full border-2 border-brand-blue flex items-center justify-center transition-colors group-hover:border-blue-400">
+                                <i class="ph-bold ph-check text-white text-xs opacity-0 transition-opacity"></i>
+                            </div>
+                            <div class="ml-4 flex-1 text-gray-700 font-semibold transition-all select-none">Treino na Academia</div>
+                            <div class="bg-brand-blue/20 text-brand-blue text-[10px] font-bold px-2 py-1 rounded-lg">+25 XP</div>
+                        </label>
+                    </div>
+
+                    <!-- Category: Work -->
+                    <div class="task-category group-work">
+                        <div class="text-gray-400 text-xs font-bold uppercase tracking-wider mt-6 mb-3">Trabalho e Estudo</div>
+
+                        <!-- Task: Read (Mind) -->
+                        <label class="task-item group relative flex items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer mb-4" data-building="mind">
+                            <input type="checkbox" class="task-checkbox hidden">
+                            <div class="w-6 h-6 rounded-full border-2 border-brand-pink flex items-center justify-center transition-colors group-hover:border-pink-400">
+                                <i class="ph-bold ph-check text-white text-xs opacity-0 transition-opacity"></i>
+                            </div>
+                            <div class="ml-4 flex-1 text-gray-700 font-semibold transition-all select-none">Ler 20 páginas</div>
+                            <div class="bg-brand-pink/20 text-brand-pink text-[10px] font-bold px-2 py-1 rounded-lg">+15 XP</div>
+                        </label>
+
+                        <!-- Task: Inbox (General) -->
+                        <label class="task-item group relative flex items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer mb-4" data-building="general">
+                            <input type="checkbox" class="task-checkbox hidden">
+                            <div class="w-6 h-6 rounded-full border-2 border-gray-300 flex items-center justify-center transition-colors">
+                                <i class="ph-bold ph-check text-white text-xs opacity-0 transition-opacity"></i>
+                            </div>
+                            <div class="ml-4 flex-1 text-gray-700 font-semibold transition-all select-none">Limpar E-mails</div>
+                            <div class="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded-lg">+5 XP</div>
+                        </label>
+                    </div>
+
+                </div>
+
+                 <!-- Quick Add Button (Only on Home) -->
+                 <div class="absolute bottom-24 right-8 floating-fab z-50">
+                    <button class="w-16 h-16 bg-gradient-to-tr from-brand-sage to-emerald-300 rounded-2xl shadow-floating flex items-center justify-center text-white transform transition-transform hover:scale-105 active:scale-95 focus:outline-none group">
+                        <i class="ph-bold ph-plus text-2xl group-hover:rotate-90 transition-transform duration-300"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 2: AI ASSISTANT -->
+            <div id="tab-ai" class="tab-content px-8 pb-24 h-full">
+                <div class="pt-2 pb-4 shrink-0 border-b border-gray-100 mb-4">
+                     <h1 class="text-2xl font-extrabold text-brand-dark">Assistente IA</h1>
+                     <p class="text-gray-400 text-xs font-bold uppercase tracking-wider">Planejamento Inteligente</p>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto scroll-area flex flex-col">
+                    <div class="chat-bubble-ai">
+                        Olá! Notei que você tem muitas tarefas para a manhã. Devo agrupar o "Treino na Academia" com sua "Meditação Matinal" para economizar tempo de deslocamento?
+                    </div>
+                    <div class="chat-bubble-user">
+                        Sim, por favor otimize minha agenda matinal.
+                    </div>
+                    <div class="chat-bubble-ai">
+                        Feito! Também movi "Ler 20 páginas" para o seu horário de almoço para melhor foco.
+                    </div>
+                    
+                    <!-- Interactive Element -->
+                    <div class="mt-4 p-4 bg-brand-light rounded-xl border border-brand-blue/20">
+                        <p class="text-xs text-gray-500 font-bold mb-2">SUGESTÃO</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-semibold text-gray-700">Modo Foco Total (2h)</span>
+                            <button class="bg-brand-dark text-white text-xs px-3 py-1.5 rounded-lg">Ativar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 relative">
+                    <input type="text" placeholder="Peça para a IA reorganizar..." class="w-full bg-gray-100 rounded-xl py-3 px-4 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/50">
+                    <button class="absolute right-2 top-2 w-8 h-8 bg-brand-blue rounded-lg text-white flex items-center justify-center">
+                        <i class="ph-bold ph-paper-plane-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 3: REPORTS -->
+            <div id="tab-reports" class="tab-content px-8 pb-24 h-full">
+                <div class="pt-2 pb-4 shrink-0">
+                    <h1 class="text-2xl font-extrabold text-brand-dark">Relatório Semanal</h1>
+                    <p class="text-gray-400 text-xs font-bold uppercase tracking-wider">17 Nov - 24 Nov</p>
+               </div>
+
+               <div class="overflow-y-auto scroll-area space-y-6">
+                   <!-- Graph -->
+                   <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                       <div class="flex justify-between items-center mb-4">
+                           <h3 class="font-bold text-gray-700">Pontuação de Produtividade</h3>
+                           <span class="text-brand-sage font-bold text-sm">+12%</span>
+                       </div>
+                       <div class="h-32 flex items-end justify-between space-x-2">
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[40%] hover:bg-brand-blue/50 transition-colors"></div>
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[60%] hover:bg-brand-blue/50 transition-colors"></div>
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[30%] hover:bg-brand-blue/50 transition-colors"></div>
+                           <div class="w-full bg-brand-blue rounded-t-lg relative group h-[85%] shadow-lg shadow-brand-blue/20"></div>
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[50%] hover:bg-brand-blue/50 transition-colors"></div>
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[20%] hover:bg-brand-blue/50 transition-colors"></div>
+                           <div class="w-full bg-gray-100 rounded-t-lg relative group h-[65%] hover:bg-brand-blue/50 transition-colors"></div>
+                       </div>
+                       <div class="flex justify-between text-[10px] text-gray-400 mt-2 font-bold uppercase">
+                           <span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span><span>D</span>
+                       </div>
+                   </div>
+
+                   <!-- Grid Stats -->
+                   <div class="grid grid-cols-2 gap-4">
+                       <div class="bg-brand-pink/10 p-4 rounded-2xl">
+                           <p class="text-brand-pink text-xs font-bold uppercase">Tarefas</p>
+                           <p class="text-2xl font-extrabold text-gray-800 mt-1">42</p>
+                           <p class="text-xs text-gray-500 mt-1">Concluídas</p>
+                       </div>
+                       <div class="bg-brand-sage/10 p-4 rounded-2xl">
+                           <p class="text-brand-sage text-xs font-bold uppercase">Sequência</p>
+                           <p class="text-2xl font-extrabold text-gray-800 mt-1">5<span class="text-sm"> dias</span></p>
+                           <p class="text-xs text-gray-500 mt-1">Continue assim!</p>
+                       </div>
+                   </div>
+
+                   <!-- City Evolution -->
+                    <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex items-center space-x-4">
+                        <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">
+                            🏛️
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-800">Expansão da Cidade</p>
+                            <p class="text-xs text-gray-500">Nova zona desbloqueia no Nível 15</p>
+                            <div class="w-full h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden w-32">
+                                <div class="h-full bg-brand-dark w-[80%] rounded-full"></div>
+                            </div>
+                        </div>
+                    </div>
+               </div>
+            </div>
+
+        </div>
+
+        <!-- BOTTOM NAVIGATION -->
+        <div class="bg-white border-t border-gray-100 px-6 py-4 flex justify-between items-center shrink-0 z-50">
+            <button class="nav-item active flex flex-col items-center text-gray-400 hover:text-brand-dark transition-colors" data-target="tab-home">
+                <i class="ph-fill ph-house text-2xl mb-1"></i>
+                <span class="text-[10px] font-bold">Cidade</span>
+                <div class="nav-indicator h-1 bg-brand-dark rounded-full w-0 transition-all mt-1"></div>
+            </button>
+            <button class="nav-item flex flex-col items-center text-gray-400 hover:text-brand-dark transition-colors" data-target="tab-ai">
+                <i class="ph-fill ph-sparkle text-2xl mb-1"></i>
+                <span class="text-[10px] font-bold">Assistente</span>
+                <div class="nav-indicator h-1 bg-brand-dark rounded-full w-0 transition-all mt-1"></div>
+            </button>
+            <button class="nav-item flex flex-col items-center text-gray-400 hover:text-brand-dark transition-colors" data-target="tab-reports">
+                <i class="ph-fill ph-chart-bar text-2xl mb-1"></i>
+                <span class="text-[10px] font-bold">Relatórios</span>
+                <div class="nav-indicator h-1 bg-brand-dark rounded-full w-0 transition-all mt-1"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Logic -->
+    <script>
+        // --- THREE.JS SETUP ---
+        let camera, scene, renderer, cityGroup, raycaster, mouse;
+        const pointer = new THREE.Vector2();
+        
+        const initThreeJS = () => {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xE6F0FF, 0.02);
+
+            // Raycaster for interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Camera (Orthographic)
+            const aspect = container.clientWidth / container.clientHeight;
+            const d = 20;
+            camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+            camera.position.set(20, 20, 20); 
+            camera.lookAt(scene.position);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.SoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            dirLight.position.set(20, 40, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            // --- CITY BUILDER ---
+            cityGroup = new THREE.Group();
+
+            // Materials
+            const matIsland = new THREE.MeshStandardMaterial({ color: 0xA8C3A4, flatShading: true }); 
+            const matBase = new THREE.MeshStandardMaterial({ color: 0x8DA38A, flatShading: true }); 
+            const matLibrary = new THREE.MeshStandardMaterial({ color: 0xF4C2C2, flatShading: true }); 
+            const matGym = new THREE.MeshStandardMaterial({ color: 0xAEC6CF, flatShading: true }); // Blue
+            const matWindow = new THREE.MeshStandardMaterial({ color: 0xE0F7FA, flatShading: true });
+            const matWood = new THREE.MeshStandardMaterial({ color: 0xD4B59D, flatShading: true });
+            const matTree = new THREE.MeshStandardMaterial({ color: 0x5D9B78, flatShading: true });
+
+            // 1. Floating Island Base
+            const islandGeo = new THREE.CylinderGeometry(14, 12, 4, 8);
+            const island = new THREE.Mesh(islandGeo, matIsland);
+            island.receiveShadow = true;
+            island.position.y = -2;
+            cityGroup.add(island);
+            
+            const dirtGeo = new THREE.CylinderGeometry(12, 6, 3, 8);
+            const dirt = new THREE.Mesh(dirtGeo, matBase);
+            dirt.position.y = -5;
+            cityGroup.add(dirt);
+
+            // 2. Library Building (Pink)
+            const libGroup = new THREE.Group();
+            libGroup.name = "LibraryGroup"; // Identifying name
+
+            const libBody = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 5), matLibrary);
+            libBody.position.y = 2.5;
+            libBody.castShadow = true;
+            libBody.receiveShadow = true;
+            libGroup.add(libBody);
+
+            const libRoof = new THREE.Mesh(new THREE.ConeGeometry(4.5, 3, 4), matWood);
+            libRoof.position.y = 6.5;
+            libRoof.rotation.y = Math.PI / 4;
+            libRoof.castShadow = true;
+            libGroup.add(libRoof);
+
+            const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3), matWindow);
+            p1.position.set(1.5, 1.5, 2.6);
+            const p2 = p1.clone();
+            p2.position.set(-1.5, 1.5, 2.6);
+            libGroup.add(p1, p2);
+
+            libGroup.position.set(-4, 0, 3);
+            libGroup.rotation.y = Math.PI / 6;
+            cityGroup.add(libGroup);
+
+            // 3. Gym Building (Blue) - THE INTERACTIVE ONE
+            const gymGroup = new THREE.Group();
+            gymGroup.name = "GymGroup"; // Crucial for Raycasting
+
+            const gymBody = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 4), matGym);
+            gymBody.position.y = 2;
+            gymBody.castShadow = true;
+            gymBody.receiveShadow = true;
+            gymBody.name = "GymBody"; // Also naming mesh
+            gymGroup.add(gymBody);
+
+            const winGeo = new THREE.BoxGeometry(1.5, 2.5, 0.1);
+            const w1 = new THREE.Mesh(winGeo, matWindow);
+            w1.position.set(-1.5, 2, 2.05);
+            const w2 = w1.clone();
+            w2.position.set(1.5, 2, 2.05);
+            gymGroup.add(w1, w2);
+
+            // Dumbbell decor
+            const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 4), new THREE.MeshStandardMaterial({color: 0x555555}));
+            bar.rotation.z = Math.PI / 2;
+            bar.position.y = 5;
+            
+            const weightGeo = new THREE.CylinderGeometry(1, 1, 0.5);
+            const weightMat = new THREE.MeshStandardMaterial({color: 0x333333});
+            const weight1 = new THREE.Mesh(weightGeo, weightMat);
+            weight1.rotation.z = Math.PI / 2;
+            weight1.position.set(-1.5, 5, 0);
+            const weight2 = weight1.clone();
+            weight2.position.set(1.5, 5, 0);
+
+            gymGroup.add(bar, weight1, weight2);
+            
+            gymGroup.position.set(4, 0, -3);
+            gymGroup.rotation.y = -Math.PI / 8;
+            cityGroup.add(gymGroup);
+
+            // 4. Decoration (Trees)
+            function createTree(x, z) {
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.4, 1.5), matWood);
+                trunk.position.set(x, 0.75, z);
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.2, 3, 5), matTree);
+                leaves.position.set(x, 2.5, z);
+                leaves.castShadow = true;
+                cityGroup.add(trunk, leaves);
+            }
+
+            createTree(6, 4); createTree(5, 5); createTree(-6, -4);
+            createTree(0, -6); createTree(-5, 5);
+
+            // 5. Clouds
+            const cloudGeo = new THREE.SphereGeometry(1.5, 7, 7);
+            const matCloud = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.8 });
+            const c1 = new THREE.Mesh(cloudGeo, matCloud);
+            c1.position.set(10, 8, -10); c1.scale.set(1.5, 1, 1);
+            const c2 = c1.clone();
+            c2.position.set(-12, 6, 5); c2.scale.set(1.2, 1, 1);
+            scene.add(c1, c2);
+
+            scene.add(cityGroup);
+
+            // --- ANIMATION LOOP ---
+            let time = 0;
+            const animate = () => {
+                requestAnimationFrame(animate);
+                time += 0.005;
+
+                // Gentle floating
+                cityGroup.position.y = Math.sin(time * 2) * 0.5;
+                
+                // Clouds moving
+                c1.position.x = 10 + Math.sin(time) * 2;
+                c2.position.x = -12 + Math.cos(time * 0.8) * 2;
+
+                renderer.render(scene, camera);
+            };
+
+            animate();
+
+            // --- INTERACTIVITY SETUP ---
+            setupInteraction(container);
+
+            // Resize handle
+            window.addEventListener('resize', () => {
+                const newAspect = container.clientWidth / container.clientHeight;
+                camera.left = -d * newAspect;
+                camera.right = d * newAspect;
+                camera.top = d;
+                camera.bottom = -d;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+        };
+
+        // --- INTERACTION LOGIC (Drag & Click) ---
+        function setupInteraction(container) {
+            let isDragging = false;
+            let startX = 0;
+            let startY = 0;
+            let previousMousePosition = { x: 0, y: 0 };
+
+            // Mouse Events
+            container.addEventListener('mousedown', (e) => {
+                isDragging = false; // Assume click first
+                startX = e.clientX;
+                startY = e.clientY;
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            });
+
+            container.addEventListener('mousemove', (e) => {
+                // If moved significantly, it's a drag
+                if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+                    isDragging = true;
+                }
+
+                if (isDragging && e.buttons === 1) { // Left click drag
+                    const deltaMove = {
+                        x: e.offsetX - previousMousePosition.x,
+                        y: e.offsetY - previousMousePosition.y
+                    };
+                    cityGroup.rotation.y += deltaMove.x * 0.005;
+                }
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            });
+
+            container.addEventListener('mouseup', (e) => {
+                if (!isDragging) {
+                    // It was a click! Raycast logic here.
+                    handleCityClick(e, container);
+                }
+                isDragging = false;
+            });
+
+            // Touch Events (Simplified for demo)
+            container.addEventListener('touchstart', (e) => {
+                isDragging = false;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            });
+            
+            container.addEventListener('touchmove', (e) => {
+                 if (Math.abs(e.touches[0].clientX - startX) > 5) isDragging = true;
+                 if (isDragging) {
+                    const deltaX = e.touches[0].clientX - previousMousePosition.x;
+                    cityGroup.rotation.y += deltaX * 0.005;
+                    previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                 }
+            });
+
+             container.addEventListener('touchend', (e) => {
+                if (!isDragging) {
+                    // Emulate click for touch
+                    // Note: e.changedTouches[0] needed for end position
+                    const touch = e.changedTouches[0];
+                    const mockEvent = { clientX: touch.clientX, clientY: touch.clientY };
+                    handleCityClick(mockEvent, container);
+                }
+                isDragging = false;
+            });
+        }
+
+        // --- RAYCASTING & FILTERING ---
+        function handleCityClick(event, container) {
+            const rect = container.getBoundingClientRect();
+            
+            // Normalize coordinates (-1 to +1)
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+
+            // Intersect recursively
+            const intersects = raycaster.intersectObjects(cityGroup.children, true);
+
+            if (intersects.length > 0) {
+                // Find parent group name
+                let obj = intersects[0].object;
+                while(obj.parent && obj.parent !== cityGroup) {
+                    obj = obj.parent;
+                }
+
+                if (obj.name === "GymGroup") {
+                    filterTasks('gym');
+                } else if (obj.name === "LibraryGroup") {
+                    // Optional: Filter for library too if you wanted
+                     filterTasks('mind'); // Assuming library = mind tasks
+                }
+            }
+        }
+
+        function filterTasks(type) {
+            const tasks = document.querySelectorAll('.task-item');
+            const message = document.getElementById('filter-message');
+            const resetBtn = document.getElementById('reset-filter-btn');
+
+            // Visual Cue: Highlight the clicked building (via simple console or UI msg for now)
+            message.textContent = type === 'gym' ? '🏃 Exibindo apenas tarefas de Academia' : '📚 Exibindo apenas tarefas da Biblioteca';
+            message.classList.remove('hidden');
+            resetBtn.classList.remove('hidden');
+
+            tasks.forEach(task => {
+                if (task.dataset.building === type) {
+                    task.classList.remove('hidden-task');
+                    // Add animation class
+                    task.style.animation = "fadeIn 0.5s";
+                } else {
+                    task.classList.add('hidden-task');
+                }
+            });
+        }
+
+        function resetFilter() {
+            const tasks = document.querySelectorAll('.task-item');
+            const message = document.getElementById('filter-message');
+            const resetBtn = document.getElementById('reset-filter-btn');
+
+            message.classList.add('hidden');
+            resetBtn.classList.add('hidden');
+
+            tasks.forEach(task => {
+                task.classList.remove('hidden-task');
+            });
+        }
+
+        document.getElementById('reset-filter-btn').addEventListener('click', resetFilter);
+
+
+        // --- UI LOGIC ---
+
+        // Confetti
+        const fireConfetti = (element) => {
+            const rect = element.getBoundingClientRect();
+            const colors = ['#AEC6CF', '#F4C2C2', '#A8C3A4', '#FFD700'];
+            
+            for(let i=0; i<15; i++) {
+                const confetti = document.createElement('div');
+                confetti.classList.add('confetti');
+                confetti.style.left = (rect.left + rect.width/2) + 'px';
+                confetti.style.top = (rect.top + rect.height/2) + 'px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                
+                const x = (Math.random() - 0.5) * 100;
+                const y = (Math.random() - 1) * 100;
+                confetti.style.transform = `translate(${x}px, ${y}px)`;
+                
+                document.body.appendChild(confetti);
+                setTimeout(() => confetti.remove(), 1000);
+            }
+        };
+
+        // Navigation Tabs
+        const navItems = document.querySelectorAll('.nav-item');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const targetId = item.dataset.target;
+
+                // Update Nav UI
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+
+                // Update Content UI
+                tabContents.forEach(tab => {
+                    tab.classList.remove('active');
+                    if (tab.id === targetId) {
+                        // Small timeout for fade effect
+                        setTimeout(() => tab.classList.add('active'), 50);
+                    }
+                });
+            });
+        });
+
+        // Checkbox Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            initThreeJS();
+
+            const checkboxes = document.querySelectorAll('.task-checkbox');
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    const label = e.target.closest('label');
+                    const icon = label.querySelector('.ph-check');
+                    const circle = label.querySelector('div.rounded-full');
+                    
+                    if (e.target.checked) {
+                        icon.style.opacity = '1';
+                        // Keep specific color based on border class logic, or simplify:
+                        if(circle.classList.contains('border-brand-sage')) circle.classList.add('bg-brand-sage');
+                        if(circle.classList.contains('border-brand-blue')) circle.classList.add('bg-brand-blue');
+                        if(circle.classList.contains('border-brand-pink')) circle.classList.add('bg-brand-pink');
+                        if(circle.classList.contains('border-gray-300')) { circle.classList.remove('border-gray-300'); circle.classList.add('bg-gray-300', 'border-gray-300'); }
+
+                        fireConfetti(label);
+                    } else {
+                        icon.style.opacity = '0';
+                        circle.classList.remove('bg-brand-sage', 'bg-brand-blue', 'bg-brand-pink', 'bg-gray-300');
+                        if(!circle.classList.contains('border-2')) circle.classList.add('border-2'); 
+                    }
+                });
+            });
+        });
+
+    </script>
+</body>
+</html>
